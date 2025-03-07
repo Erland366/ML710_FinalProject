@@ -182,7 +182,7 @@ def main(
         elif parallel_config.dp_engine == "ddp":
             model = DDP(model, device_ids=[local_rank])
         elif parallel_config.dp_engine == "fsdp":
-            model = FSDP(model, zero_stage=parallel_config.zero_stage)
+            model = FSDP(model, zero_stage=parallel_config.zero_stage).model
         else:
             raise ValueError(f"Invalid data parallel engine: {parallel_config.dp_engine}")
 

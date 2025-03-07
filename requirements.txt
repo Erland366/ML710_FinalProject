@@ -1,8 +1,12 @@
-torch
-triton
-numpy==1.26.4
+torch==2.6.0
+torchaudio==2.6.0
+torchvision==0.21.0
+triton==3.2.0
+numpy==2.2.3
 datasets
-transformers
-flash-attn
+transformers==4.49.0
+flash-attn==2.7.4
 wandb
 huggingface_hub[hf_transfer]
+git+https://github.com/samsja/pydantic_config
+pyyaml

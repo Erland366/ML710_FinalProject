@@ -17,6 +17,7 @@ class TrainConfig(BaseConfig):
     # logging
     use_wandb: bool = True
     run_name: str = ""
+    pretrain: bool = False
 
 class DataConfig(BaseConfig):
     path: str

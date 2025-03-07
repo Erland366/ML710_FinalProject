@@ -7,14 +7,15 @@ train_config:
   max_seq_length: 512
 
   run_name: "Microllama-fineweb-edu-base"
+  pretrain: False
 
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 
 parallel_config:
-  tp_size: 2
+  tp_size: 1
   pp_size: 1
-  dp_size: 1
+  dp_size: 2
 
 model_config:
   name: "keeeeenw/MicroLlama"

@@ -248,9 +248,9 @@ def main(
                 f"Tok/s/GPU: {to_readable_format(tokens_per_second_per_gpu):>7s} | "
                 f"Tok: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
                 f"MFU: {mfu:5.2f}% | "
-                f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB |"
+                f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB | "
                 f"T: {goodput_log['throughput']:6.4f} | "
-                f"SE: {goodput_log['statistical_efficiency']:6.4f}"
+                f"SE: {goodput_log['statistical_efficiency']:6.4f} | "
                 f"G: {goodput_log['goodput']:6.4f} | "
             )
         

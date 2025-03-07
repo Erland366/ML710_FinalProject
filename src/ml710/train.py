@@ -1,26 +1,60 @@
+import inspect
 import os
+import time
 
 import torch
+import torch.nn.functional as F
 import picotron.process_group_manager as pgm
 
 from transformers import set_seed, LlamaForCausalLM, AutoConfig
 from torch import distributed as dist
+from torch.optim import AdamW
+from torch.nn.parallel import DistributedDataParallel as DDP
 from dotenv import load_dotenv
 from picotron.process_group_manager import setup_process_group_manager
 from picotron.data import MicroBatchDataLoader
-from picotron.utils import download_model, to_readable_format
+from picotron.utils import average_loss_across_dp_cp_ranks, set_all_seed, print, to_readable_format, get_mfu, get_num_params, download_model
 from picotron.data_parallel.data_parallel import DataParallelNaive, DataParallelBucket
 from picotron.tensor_parallel.tensor_parallel import apply_tensor_parallel
-from picotron.pipeline_parallel.pipeline_parallel import PipelineParallel
+from picotron.pipeline_parallel.pipeline_parallel import train_step_pipeline_1f1b, train_step_pipeline_afab, PipelineParallel
 from pydantic_config import parse_argv
 from pydantic import validate_call
 from safetensors.torch import load_file
 
 from ml710.config import TrainConfig, DataConfig, ParallelConfig, ModelConfig
 from ml710.utils import create_logger
-from ml710.checkpoint import init_model_with_dematerialized_weights, init_model_with_materialized_weights
+from ml710.checkpoint import init_model_with_dematerialized_weights, init_model_with_materialized_weights, CheckpointManager
 
 load_dotenv()
+
+def train_step(model, data_loader, device):
+    acc_loss = 0.0
+    
+    requires_grad_sync = pgm.process_group_manager.cp_dp_world_size > 1
+    for i in range(data_loader.grad_acc_steps):
+        # get the next batch
+        batch = next(data_loader)
+        input_ids = batch["input_ids"].to(device)
+        target_ids = batch["target_ids"].to(device)
+
+        # disable gradient synchronization for all but the last micro-batch
+        if requires_grad_sync:
+            model.require_backward_grad_sync = (i == data_loader.grad_acc_steps - 1)
+
+        outputs = model(input_ids=input_ids)
+
+        # compute the loss
+        batch_size, seq_len = input_ids.shape
+        target_ids = target_ids.reshape(-1)
+
+        outputs = outputs.logits.view(seq_len*batch_size, -1)
+        loss = F.cross_entropy(outputs, target_ids, reduction='mean') / data_loader.grad_acc_steps
+        
+        loss.backward()
+
+        acc_loss += loss.item()
+
+    return acc_loss
 
 @validate_call
 def main(
@@ -87,6 +121,10 @@ def main(
     if pgm.process_group_manager.global_rank == 0:
         logger.info("Creating model config")
         config = AutoConfig.from_pretrained(model_config.name)
+
+        # Change attention implementation here
+        config._attn_implementation = train_config.attn_implementation
+
         objects = [config]
     else:
         objects = [None]
@@ -115,9 +153,6 @@ def main(
             config=config_dict
         )
 
-    logger.debug("")
-
-    # BELOW LOADING IS STILL LOADING FULL MODEL ON EACH GPU
     with init_model_with_dematerialized_weights():
         model = LlamaForCausalLM(config)
 
@@ -128,12 +163,105 @@ def main(
         if pgm.process_group_manager.pp_world_size > 1:
             model = PipelineParallel(model, config)
 
+
     model = init_model_with_materialized_weights(model, config, save_dir=f"./hf_model_safetensors/")
 
     model.to(dtype).to(device)
 
+    # Compile
+    if train_config.use_compile:
+        model = torch.compile(model)
+
     if pgm.process_group_manager.dp_world_size > 1:
-        model = DataParallelBucket(model)
+        if parallel_config.dp_engine == "naive":
+            model = DataParallelNaive(model)
+        elif parallel_config.dp_engine == "bucket":
+            model = DataParallelBucket(model)
+        elif parallel_config.dp_engine == "ddp":
+            model = DDP(model, device_ids=[local_rank])
+            logger.info("Using DDP")
+        model = DataParallelNaive(model)
+
+    model.train()
+    num_params = get_num_params(model)
+    if global_rank == 0:
+        logger.info(f"Number of parameters: {to_readable_format(num_params)}")
+    
+    tensor_shapes = (data_loader.micro_batch_size, data_loader.seq_length_per_gpu, config.hidden_size)
+    
+    extra_args = dict()
+    if train_config.use_fused_adam:
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        use_fused = fused_available and device == 'cuda'
+        extra_args = dict(fused=True) if use_fused else dict()
+
+    optimizer = AdamW(model.parameters(), lr=train_config.lr, **extra_args)
+    
+    checkpoint_manager = CheckpointManager()
+
+    trained_tokens, step = 0, 0
+    if train_config.load_path:
+        step, trained_tokens = checkpoint_manager.load_checkpoint(model, optimizer, train_config.load_path)
+    
+    dist.barrier()
+    
+    while train_config.max_tokens is None or trained_tokens < train_config.max_tokens:
+        step_start_time = time.time()
+        optimizer.zero_grad()
+        
+        if pgm.process_group_manager.pp_world_size > 1:
+            if parallel_config.pp_engine == "afab":
+                loss = train_step_pipeline_afab(model, data_loader, tensor_shapes, device, dtype)
+            elif parallel_config.pp_engine == "1f1b":
+                loss = train_step_pipeline_1f1b(model, data_loader, tensor_shapes, device, dtype)
+            else:
+                raise ValueError(f"Invalid pipeline parallel engine: {parallel_config.pp_engine}")
+        else:
+            loss = train_step(model, data_loader, device)
+            
+        loss = average_loss_across_dp_cp_ranks(loss, device)
+        
+        optimizer.step()
+        trained_tokens += tokens_per_step
+        step += 1
+        
+        if hasattr(model, 'reset'):
+            model.reset()
+
+        step_duration = time.time() - step_start_time
+        tokens_per_second = tokens_per_step / step_duration
+        tokens_per_second_per_gpu = tokens_per_second / world_size
+        mfu = get_mfu(tokens_per_second_per_gpu, num_params, config)
+        
+        if global_rank == 0:
+            logger.info(
+                f"[rank {pgm.process_group_manager.global_rank}] "
+                f"Step: {step:<5d} | "
+                f"Loss: {loss:6.4f} | "
+                f"Global batch size: {to_readable_format(tokens_per_step):>7s} | "
+                f"Tokens/s: {to_readable_format(tokens_per_second):>7s} | "
+                f"Tokens/s/GPU: {to_readable_format(tokens_per_second_per_gpu):>7s} | "
+                f"Tokens: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
+                f"MFU: {mfu:5.2f}% | "
+                f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB",
+            )
+        
+            if train_config.use_wandb:
+                wandb.log({
+                    "loss": loss,
+                    "tokens_per_step": tokens_per_step,
+                    "tokens_per_second": tokens_per_step / step_duration,
+                    "mfu": mfu,
+                    "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
+                    "memory_usage": torch.cuda.memory_reserved() / 1e9,
+                    "trained_tokens": trained_tokens
+                })
+        
+        if step % train_config.save_frequency == 0:
+            checkpoint_manager.save_checkpoint(model, optimizer, step, trained_tokens, train_config.checkpoint_path+f"/{step}")
+        
+        if step >= train_config.total_train_steps:
+            break
 
     if global_rank == 0 and train_config.use_wandb:
         wandb.finish()

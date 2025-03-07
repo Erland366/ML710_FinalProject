@@ -9,6 +9,9 @@ train_config:
   run_name: "Microllama-fineweb-edu-base"
   pretrain: False
 
+  use_compile: False
+  attn_implementation: "flash_attention_2"
+
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 

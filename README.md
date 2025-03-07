@@ -38,6 +38,10 @@ or if using torchrun
 CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node 2 src/ml710/train.py @ configs/base.yaml
 ```
 
+Modify your config on CLI by the power of [pydantic_config](https://github.com/samsja/pydantic_config)
+```
+WANDB_MODE=offline CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node 1 src/ml710/train.py @ configs/base.yaml --parallel_config.dp_size=1
+```
 
 If you want to debug, you can use `debugpy-run` like this 
 

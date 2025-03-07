@@ -6,15 +6,16 @@ class GoodputMetrics:
         self.mini_batch_size = mini_batch_size
         self.last_loss = 0
         self.last_time = time.time()
+        self.eps = 1e-6
 
     def reset_time(self) -> None:
         self.last_time = time.time()
 
     def _throughput(self, time) -> float:
-        return (self.mini_batch_size * self.window_size) / time
+        return (self.mini_batch_size * self.window_size) / (time - self.last_time + self.eps)
 
     def _statistical_efficiency(self, new_loss) -> float:
-        return abs(new_loss - self.last_loss) / (self.window_size * self.mini_batch_size)
+        return abs(new_loss - self.last_loss) / ((self.window_size * self.mini_batch_size) + self.eps)
 
     def _goodput(self, time, new_loss) -> float:
         return self._throughput(time) * self._statistical_efficiency(new_loss)

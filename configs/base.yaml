@@ -20,5 +20,9 @@ parallel_config:
   pp_size: 1
   dp_size: 2
 
+  dp_engine: "fsdp"
+  zero_stage: 3
+
+
 model_config:
   name: "keeeeenw/MicroLlama"

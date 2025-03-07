@@ -25,6 +25,7 @@ from ml710.config import TrainConfig, DataConfig, ParallelConfig, ModelConfig
 from ml710.utils import create_logger
 from ml710.checkpoint import init_model_with_dematerialized_weights, init_model_with_materialized_weights, CheckpointManager
 from ml710.metrics import GoodputMetrics
+from ml710.data_parallel import FSDP
 
 load_dotenv()
 
@@ -180,6 +181,8 @@ def main(
             model = DataParallelBucket(model)
         elif parallel_config.dp_engine == "ddp":
             model = DDP(model, device_ids=[local_rank])
+        elif parallel_config.dp_engine == "fsdp":
+            model = FSDP(model, zero_stage=parallel_config.zero_stage)
         else:
             raise ValueError(f"Invalid data parallel engine: {parallel_config.dp_engine}")
 

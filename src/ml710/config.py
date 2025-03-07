@@ -44,7 +44,8 @@ class ParallelConfig(BaseConfig):
     tp_size: int = 1
     pp_size: int = 1
     dp_size: int = 1
-    dp_engine: Literal["ddp", "naive", "bucket"] = "bucket"
+    dp_engine: Literal["ddp", "naive", "bucket", "fsdp"] = "bucket"
+    zero_stage: int = 3
 
     # PP settings
     pp_engine: Literal["afab", "1f1b"] = "afab"

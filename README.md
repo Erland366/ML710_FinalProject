@@ -4,12 +4,19 @@
 [ ] Implement AMP
 - Decide on the dataset for training
 
+# Target
+We need to make sure that
+- FSDP should be slower than the rest of DP
+- Bucketing is faster than Naive
+- FSDP requires less memory than the others
+- Same loss across any implementations
+
 # Parallel Strategies
-- [ ] Data Parallelism
-    - [ ] Naive
+- [x] Data Parallelism
+    - [x] Naive
     - [ ] Wait-free backpropagation
-    - [ ] Bucketing
-    - [ ] FSDP
+    - [x] Bucketing
+    - [x] FSDP
 - [ ] Model Parallelism
 - [ ] Pipeline Parallelism
 <!-- - [ ] Data + Model Parallelism (Need at least 4 GPUs) -->

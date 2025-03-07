@@ -1,7 +1,7 @@
 # Plan
-[x] Implement [MicroLLama](https://github.com/keeeeenw/MicroLlama)
-[x] Implement [Picotron](https://github.com/huggingface/picotron) on top of MicroLlama
-[ ] Implement AMP
+- [x] Implement [MicroLLama](https://github.com/keeeeenw/MicroLlama)
+- [x] Implement [Picotron](https://github.com/huggingface/picotron) on top of MicroLlama
+- [ ] Implement AMP
 - Decide on the dataset for training
 
 # Target

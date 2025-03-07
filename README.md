@@ -1,8 +1,8 @@
 # Plan
-- Implement [MicroLLama](https://github.com/keeeeenw/MicroLlama)
-- Implement [Picotron](https://github.com/huggingface/picotron) on top of MicroLlama
+[x] Implement [MicroLLama](https://github.com/keeeeenw/MicroLlama)
+[x] Implement [Picotron](https://github.com/huggingface/picotron) on top of MicroLlama
+[ ] Implement AMP
 - Decide on the dataset for training
-
 
 # Parallel Strategies
 - [ ] Data Parallelism

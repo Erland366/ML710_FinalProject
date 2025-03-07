@@ -24,6 +24,7 @@ from safetensors.torch import load_file
 from ml710.config import TrainConfig, DataConfig, ParallelConfig, ModelConfig
 from ml710.utils import create_logger
 from ml710.checkpoint import init_model_with_dematerialized_weights, init_model_with_materialized_weights, CheckpointManager
+from ml710.metrics import GoodputMetrics
 
 load_dotenv()
 
@@ -179,8 +180,8 @@ def main(
             model = DataParallelBucket(model)
         elif parallel_config.dp_engine == "ddp":
             model = DDP(model, device_ids=[local_rank])
-            logger.info("Using DDP")
-        model = DataParallelNaive(model)
+        else:
+            raise ValueError(f"Invalid data parallel engine: {parallel_config.dp_engine}")
 
     model.train()
     num_params = get_num_params(model)
@@ -204,7 +205,10 @@ def main(
         step, trained_tokens = checkpoint_manager.load_checkpoint(model, optimizer, train_config.load_path)
     
     dist.barrier()
-    
+
+    goodput_metrics = GoodputMetrics(window_size=1, mini_batch_size=train_config.per_device_train_batch_size * pgm.process_group_manager.dp_world_size)
+    goodput_metrics.reset_time()
+
     while train_config.max_tokens is None or trained_tokens < train_config.max_tokens:
         step_start_time = time.time()
         optimizer.zero_grad()
@@ -234,28 +238,36 @@ def main(
         mfu = get_mfu(tokens_per_second_per_gpu, num_params, config)
         
         if global_rank == 0:
+            goodput_log = goodput_metrics.metrics(step_duration, loss)
             logger.info(
                 f"[rank {pgm.process_group_manager.global_rank}] "
                 f"Step: {step:<5d} | "
                 f"Loss: {loss:6.4f} | "
                 f"Global batch size: {to_readable_format(tokens_per_step):>7s} | "
-                f"Tokens/s: {to_readable_format(tokens_per_second):>7s} | "
-                f"Tokens/s/GPU: {to_readable_format(tokens_per_second_per_gpu):>7s} | "
-                f"Tokens: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
+                f"Tok/s: {to_readable_format(tokens_per_second):>7s} | "
+                f"Tok/s/GPU: {to_readable_format(tokens_per_second_per_gpu):>7s} | "
+                f"Tok: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
                 f"MFU: {mfu:5.2f}% | "
-                f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB",
+                f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB |"
+                f"T: {goodput_log['throughput']:6.4f} | "
+                f"SE: {goodput_log['statistical_efficiency']:6.4f}"
+                f"G: {goodput_log['goodput']:6.4f} | "
             )
         
             if train_config.use_wandb:
-                wandb.log({
+                wandb_log = {
                     "loss": loss,
                     "tokens_per_step": tokens_per_step,
                     "tokens_per_second": tokens_per_step / step_duration,
                     "mfu": mfu,
                     "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
                     "memory_usage": torch.cuda.memory_reserved() / 1e9,
-                    "trained_tokens": trained_tokens
-                })
+                    "trained_tokens": trained_tokens,
+                    "goodput": goodput_log["goodput"],
+                    "throughput": goodput_log["throughput"],
+                    "statistical_efficiency": goodput_log["statistical_efficiency"]
+                }
+                wandb.log(wandb_log)
         
         if step % train_config.save_frequency == 0:
             checkpoint_manager.save_checkpoint(model, optimizer, step, trained_tokens, train_config.checkpoint_path+f"/{step}")

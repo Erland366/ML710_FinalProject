@@ -16,6 +16,8 @@ def create_logger(pgm=None, name="app"):
             prefix = f"[{name}]"
     else:
         prefix = f"[{name}]"
+
+    prefix = "-".join(prefix.split("-")[:-1])
     
     formatter = logging.Formatter(f'{prefix} %(message)s')
     handler.setFormatter(formatter)

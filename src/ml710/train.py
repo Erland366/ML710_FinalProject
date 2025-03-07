@@ -142,6 +142,14 @@ def main(
     if global_rank == 0 and train_config.use_wandb:
         import wandb
 
+        # Better run name for logging experiments
+        if pgm.process_group_manager.tp_world_size > 1:
+            train_config.run_name += f"-tp_{parallel_config.tp_engine.upper()}"
+        if pgm.process_group_manager.pp_world_size > 1:
+            train_config.run_name += f"-pp_{parallel_config.pp_engine.upper()}"
+        if pgm.process_group_manager.dp_world_size > 1:
+            train_config.run_name += f"-dp_{parallel_config.dp_engine.upper()}"
+
         config_dict = {}
         config_dict.update(train_config.dict())
         config_dict.update(data_config.dict())

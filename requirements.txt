@@ -1,14 +1,7 @@
-torch==2.6.0
-torchaudio==2.6.0
-torchvision==0.21.0
-triton==3.2.0
-numpy==2.2.3
+git+https://github.com/huggingface/picotron.git
 datasets
-transformers==4.49.0
-flash-attn==2.7.4.post1
 wandb
 huggingface_hub[hf_transfer]
 git+https://github.com/samsja/pydantic_config
 pyyaml
-datasets==3.3.2
--e git+https://github.com/huggingface/picotron.git#egg=picotron
+sentencepiece==0.2.0

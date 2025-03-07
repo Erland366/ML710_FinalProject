@@ -36,5 +36,7 @@ python src/ml710/train.py @ configs/base.yaml
 
 or if using torchrun
 ```
-torchrun --nproc_per_node 2 src/ml710/train.py @ configs/base.yaml
+CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node 2 src/ml710/train.py @ configs/base.yaml
 ```
+
+Remove `CUDA_DEVICE_MAX_CONNECTIONS=1` on FSDP

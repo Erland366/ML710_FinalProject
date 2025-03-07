@@ -5,3 +5,8 @@ class TrainConfig(BaseConfig):
 
 class DataConfig(BaseConfig):
     path: str
+
+class ParallelConfig(BaseConfig):
+    tp_size: int = 1
+    pp_size: int = 1
+    dp_size: int = 1

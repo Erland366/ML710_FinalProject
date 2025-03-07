@@ -3,3 +3,8 @@ train_config:
 
 data_config:
   path: "Hello world"
+
+parallel_config:
+  tp_size: 2
+  pp_size: 1
+  dp_size: 1

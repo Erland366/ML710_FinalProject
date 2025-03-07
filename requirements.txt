@@ -5,9 +5,10 @@ triton==3.2.0
 numpy==2.2.3
 datasets
 transformers==4.49.0
-flash-attn==2.7.4
+flash-attn==2.7.4.post1
 wandb
 huggingface_hub[hf_transfer]
 git+https://github.com/samsja/pydantic_config
 pyyaml
-git+https://github.com/huggingface/picotron.git
+datasets==3.3.2
+-e git+https://github.com/huggingface/picotron.git#egg=picotron

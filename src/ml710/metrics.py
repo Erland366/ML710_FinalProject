@@ -12,7 +12,7 @@ class GoodputMetrics:
         self.last_time = time.time()
 
     def _throughput(self, time) -> float:
-        return (self.mini_batch_size * self.window_size) / (time - self.last_time + self.eps)
+        return (self.mini_batch_size * self.window_size) / (abs(time - self.last_time) + self.eps)
 
     def _statistical_efficiency(self, new_loss) -> float:
         return abs(new_loss - self.last_loss) / ((self.window_size * self.mini_batch_size) + self.eps)

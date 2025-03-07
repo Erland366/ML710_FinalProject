@@ -14,7 +14,7 @@
 ```
 conda create -n ml710_finalproject python=3.11 -y
 conda activate ml710_finalproject
-pip install -r requirements.txt
+pip install -r requirements.txt --no-dependencies
 ```
 
 If you have problem to install flash-attn:

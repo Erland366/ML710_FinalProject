@@ -10,3 +10,4 @@ wandb
 huggingface_hub[hf_transfer]
 git+https://github.com/samsja/pydantic_config
 pyyaml
+git+https://github.com/huggingface/picotron.git

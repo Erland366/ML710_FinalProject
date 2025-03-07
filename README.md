@@ -6,6 +6,10 @@
 
 # Parallel Strategies
 - [ ] Data Parallelism
+    - [ ] Naive
+    - [ ] Wait-free backpropagation
+    - [ ] Bucketing
+    - [ ] FSDP
 - [ ] Model Parallelism
 - [ ] Pipeline Parallelism
 <!-- - [ ] Data + Model Parallelism (Need at least 4 GPUs) -->
@@ -32,6 +36,13 @@ python src/ml710/train.py @ configs/base.yaml
 or if using torchrun
 ```
 CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun --nproc_per_node 2 src/ml710/train.py @ configs/base.yaml
+```
+
+
+If you want to debug, you can use `debugpy-run` like this 
+
+```
+CUDA_DEVICE_MAX_CONNECTIONS=1 debugpy-run -m torch.distributed.run -- --nproc_per_node 2 src/ml710/train.py @ configs.base.yaml
 ```
 
 Remove `CUDA_DEVICE_MAX_CONNECTIONS=1` on FSDP

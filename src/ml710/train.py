@@ -5,16 +5,17 @@ import picotron.process_group_manager as pgm
 
 from transformers import set_seed
 from torch import distributed as dist
+from dotenv import load_dotenv
 from picotron.process_group_manager import setup_process_group_manager
 from picotron.data import MicroBatchDataLoader
-from picotron.utils import download_model
+from picotron.utils import download_model, to_readable_format
 from pydantic_config import parse_argv
 from pydantic import validate_call
 
 from ml710.config import TrainConfig, DataConfig, ParallelConfig, ModelConfig
 from ml710.utils import create_logger
 
-
+load_dotenv()
 
 @validate_call
 def main(
@@ -69,16 +70,29 @@ def main(
         split=data_config.split
     )
 
+    if pgm.process_group_manager.global_rank == 0:
+        download_model(model_config.name, os.environ["HF_TOKEN"])
+
+    tokens_per_step = data_loader.global_batch_size + train_config.max_seq_length
+
     if global_rank == 0 and train_config.use_wandb:
         import wandb
 
+        config_dict = {}
+        config_dict.update(train_config.dict())
+        config_dict.update(data_config.dict())
+        config_dict.update(parallel_config.dict())
+
         wandb.init(
             project="ml710",
-            name=f"{model_config.name}-{data_config.path}",
+            name=f"{train_config.run_name}-{to_readable_format(tokens_per_step)}-{pgm.process_group_manager}",
+            config=config_dict
         )
 
-    dist.barrier()
+    if global_rank == 0 and train_config.use_wandb:
+        wandb.finish()
 
+    dist.destroy_process_group()
 
 if __name__ == '__main__':
     main(**parse_argv())

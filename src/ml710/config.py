@@ -14,6 +14,10 @@ class TrainConfig(BaseConfig):
 
     num_samples: int | None = None
 
+    # logging
+    use_wandb: bool = True
+    run_name: str = ""
+
 class DataConfig(BaseConfig):
     path: str
     num_workers: int = 4

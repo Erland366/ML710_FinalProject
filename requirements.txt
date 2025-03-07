@@ -1,4 +1,4 @@
-git+https://github.com/huggingface/picotron.git
+git+https://github.com/Erland366/picotron.git@feat/latest_version
 datasets
 wandb
 huggingface_hub[hf_transfer]

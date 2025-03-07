@@ -69,6 +69,14 @@ def main(
         split=data_config.split
     )
 
+    if global_rank == 0 and train_config.use_wandb:
+        import wandb
+
+        wandb.init(
+            project="ml710",
+            name=f"{model_config.name}-{data_config.path}",
+        )
+
     dist.barrier()
 
 

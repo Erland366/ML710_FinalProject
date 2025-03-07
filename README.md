@@ -12,15 +12,16 @@
 
 # How to Install
 ```
-conda create -n ml710_finalproject python=3.11 -y
+conda create -n ml710_finalproject python=3.11 cudatoolkit-dev -c conda-forge -y
 conda activate ml710_finalproject
-pip install -r requirements.txt --no-dependencies
+pip install -r requirements.txt
+pip install flash-attn==2.7.4.post1 --no-build-isolation
 ```
 
 If you have problem to install flash-attn:
 ```
 conda install cudatoolkit-dev -y
-CUDA_HOME=~/miniconda3/envs/ml710_finalproject pip install flash-attn
+CUDA_HOME=~/miniconda3/envs/ml710_finalproject pip install flash-attn --no-build-isolation
 ```
 
 Last, install this repo by :

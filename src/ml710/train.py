@@ -35,6 +35,8 @@ import torch
 import torch.nn.functional as F
 import picotron.process_group_manager as pgm
 
+from functools import partial
+
 from transformers import set_seed, LlamaForCausalLM, AutoConfig
 from torch import distributed as dist
 from torch.optim import AdamW
@@ -43,18 +45,22 @@ from dotenv import load_dotenv
 from picotron.process_group_manager import setup_process_group_manager
 from picotron.data import MicroBatchDataLoader
 from picotron.utils import average_loss_across_dp_cp_ranks, set_all_seed, print, to_readable_format, get_mfu, get_num_params, download_model
-from picotron.data_parallel.data_parallel import DataParallelNaive, DataParallelBucket
+from picotron.data_parallel.data_parallel import DataParallelNaive as DataParallelWaitFree, DataParallelBucket
 from picotron.tensor_parallel.tensor_parallel import apply_tensor_parallel
 from pipeline_parallel import train_step_pipeline_1f1b, train_step_pipeline_afab, PipelineParallel
 from pydantic_config import parse_argv
 from pydantic import validate_call
+from contextlib import nullcontext
 from safetensors.torch import load_file
+from torch.profiler import profile, record_function, ProfilerActivity
+from torch._C._profiler import _ExperimentalConfig
 
 from ml710.config import TrainConfig, DataConfig, ParallelConfig, ModelConfig
 from ml710.utils import create_logger
 from ml710.checkpoint import init_model_with_dematerialized_weights, init_model_with_materialized_weights, CheckpointManager
 from ml710.metrics import GoodputMetrics
-from ml710.data_parallel import FSDP
+from ml710.data_parallel import FSDP, DataParallelNaive
+from ml710.profiler import trace_handler
 
 load_dotenv()
 
@@ -94,7 +100,12 @@ def main(
     parallel_config: ParallelConfig,
     model_config: ModelConfig
 ):
-    assert train_config.max_tokens is not None or train_config.max_time is not None, "Either max_tokens or max_time must be set"
+    assert any([
+        train_config.max_tokens, 
+        train_config.max_time, 
+        train_config.max_steps, 
+        train_config.max_loss
+    ]), "Please specify one of max_tokens, max_time, max_steps, or max_loss"
 
     local_rank = int(os.environ["LOCAL_RANK"])
     global_rank = int(os.environ["RANK"])
@@ -108,6 +119,7 @@ def main(
         device = torch.device("cuda", local_rank)
     else:
         device = torch.device("cpu")
+
 
     dist.init_process_group(
         rank=global_rank,
@@ -124,6 +136,76 @@ def main(
     )
 
     logger = create_logger(pgm, name="ml710")
+
+    # Setup profiler
+    activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    use_default_schedule = not any([
+        train_config.run_profile, 
+        train_config.wait_steps, 
+        train_config.warmup_steps, 
+        train_config.active_steps, 
+        train_config.num_cycles
+    ])
+
+    DEFAULT_PROFILE_ARGS = {
+        "wait_steps" : 4,
+        "warmup_steps" : 4,
+        "active_steps" : 4,
+        "num_cycles" : 2
+    }
+
+    if use_default_schedule:
+        scheduler_args = DEFAULT_PROFILE_ARGS
+        if global_rank == 0 and train_config.run_profile:
+            logger.info(
+                "No schedule found in config, default to {}".format(
+                    ", ".join(f"{k}={v}" for k, v in scheduler_args.items())
+                )
+            )
+
+    else:
+        scheduler_args = {
+            "wait_steps" : train_config.wait_steps,
+            "warmup_steps" : train_config.warmup_steps,
+            "active_steps" : train_config.active_steps,
+            "num_cycles" : train_config.num_cycles
+        }
+        missing_args = [k for k, v in scheduler_args.items() if v is None]
+        if len(missing_args) > 0:
+            for arg in missing_args:
+                scheduler_args[arg] = DEFAULT_PROFILE_ARGS[arg]
+            if global_rank == 0 and train_config.run_profile:
+                logger.info(
+                    "Missing schedule arguments, default to {}".format(
+                        ", ".join(f"{k}={v}" for k, v in scheduler_args.items())
+                    )
+                )
+
+    schedule = torch.profiler.schedule(
+        wait=scheduler_args["wait_steps"],
+        warmup=scheduler_args["warmup_steps"],
+        active=scheduler_args["active_steps"],
+        repeat=scheduler_args["num_cycles"]
+    )
+
+    experimental_config = _ExperimentalConfig(verbose=True) if train_config.with_stack else None
+
+    output_dir = train_config.profile_path
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    callback = partial(trace_handler, output_dir=output_dir)
+
+    prof = torch.profiler.profile(
+        activities=activities,
+        profile_memory=train_config.profile_memory,
+        with_stack=train_config.with_stack,
+        record_shapes=train_config.record_shapes,
+        with_flops=train_config.with_flops,
+        schedule=schedule,
+        experimental_config=experimental_config,
+        on_trace_ready=callback
+    ) if train_config.run_profile else nullcontext()
 
     logger.info(f"{pgm.process_group_manager.tp_world_size = }")
 
@@ -215,7 +297,9 @@ def main(
         model = torch.compile(model)
 
     if pgm.process_group_manager.dp_world_size > 1:
-        if parallel_config.dp_engine == "naive":
+        if parallel_config.dp_engine == "wait_free":
+            model = DataParallelWaitFree(model)
+        elif parallel_config.dp_engine == "naive":
             model = DataParallelNaive(model)
         elif parallel_config.dp_engine == "bucket":
             model = DataParallelBucket(model)
@@ -259,94 +343,108 @@ def main(
     start_time = time.time()
     end_time = time.time()
 
-    while (train_config.max_tokens is None 
-        or trained_tokens < train_config.max_tokens 
-        or train_config.max_time is None 
-        or end_time - start_time < train_config.max_time
-        or train_config.max_steps is None
-        or step < train_config.max_steps
-    ):
-        step_start_time = time.time()
-        optimizer.zero_grad()
-        
-        if pgm.process_group_manager.pp_world_size > 1:
-            if parallel_config.pp_engine == "afab":
-                loss = train_step_pipeline_afab(model, data_loader, tensor_shapes, device, dtype)
-            elif parallel_config.pp_engine == "1f1b":
-                loss = train_step_pipeline_1f1b(model, data_loader, tensor_shapes, device, dtype)
-            else:
-                raise ValueError(f"Invalid pipeline parallel engine: {parallel_config.pp_engine}")
-        else:
-            loss = train_step(model, data_loader, device)
+    with prof as p:
+        while (train_config.max_tokens is None 
+            or trained_tokens < train_config.max_tokens 
+            or train_config.max_time is None 
+            or end_time - start_time < train_config.max_time
+            or train_config.max_steps is None
+            or step < train_config.max_steps
+            or train_config.max_loss is None
+            or loss > train_config.max_loss
+        ):
+            step_start_time = time.time()
+            optimizer.zero_grad()
             
-        loss = average_loss_across_dp_cp_ranks(loss, device)
-        
-        optimizer.step()
-        trained_tokens += tokens_per_step
-        step += 1
-        
-        if hasattr(model, 'reset'):
-            model.reset()
-
-        step_duration = time.time() - step_start_time
-        tokens_per_second = tokens_per_step / step_duration
-        tokens_per_second_per_gpu = tokens_per_second / world_size
-        mfu = get_mfu(tokens_per_second_per_gpu, num_params, config)
-        
-        if global_rank == 0:
-            goodput_log = goodput_metrics.metrics(time.time(), loss)
-            experiment_print = None
-            if train_config.max_tokens:
-                experiment_print = f"Tok: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
-            elif train_config.max_time:
-                experiment_print = f"Time: {to_readable_format(end_time - start_time):>7s}{('/' + to_readable_format(train_config.max_time)) if train_config.max_time else ''} | "
-            elif train_config.max_steps:
-                experiment_print = f"Step: {step:>7d}{('/' + to_readable_format(train_config.max_steps)) if train_config.max_steps else ''} | "
+            if pgm.process_group_manager.pp_world_size > 1:
+                if parallel_config.pp_engine == "afab":
+                    loss = train_step_pipeline_afab(model, data_loader, tensor_shapes, device, dtype)
+                elif parallel_config.pp_engine == "1f1b":
+                    loss = train_step_pipeline_1f1b(model, data_loader, tensor_shapes, device, dtype)
+                else:
+                    raise ValueError(f"Invalid pipeline parallel engine: {parallel_config.pp_engine}")
             else:
-                experiment_print = ""
-            logger.info(
-                f"[rank {pgm.process_group_manager.global_rank}] "
-                f"Step: {step:<5d} | "
-                f"Loss: {loss:6.4f} | "
-                f"Global batch size: {to_readable_format(tokens_per_step):>7s} | "
-                f"Tok/s: {to_readable_format(tokens_per_second):>7s} | "
-                f"Tok/s/GPU: {to_readable_format(tokens_per_second_per_gpu):>7s} | "
-                f"{experiment_print}"
-                f"MFU: {mfu:5.2f}% | "
-                f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB | "
-                f"T: {goodput_log['throughput']:6.4f} | "
-                f"SE: {goodput_log['statistical_efficiency']:6.4f} | "
-                f"G: {goodput_log['goodput']:6.4f} | "
-            )
-        
-            if train_config.use_wandb:
-                wandb_log = {
-                    "loss": loss,
-                    "tokens_per_step": tokens_per_step,
-                    "tokens_per_second": tokens_per_step / step_duration,
-                    "mfu": mfu,
-                    "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
-                    "memory_usage": torch.cuda.memory_reserved() / 1e9,
-                    "trained_tokens": trained_tokens,
-                    "goodput": goodput_log["goodput"],
-                    "throughput": goodput_log["throughput"],
-                    "statistical_efficiency": goodput_log["statistical_efficiency"]
-                }
-                wandb.log(wandb_log)
-        
-        if step % train_config.save_frequency == 0:
-            checkpoint_manager.save_checkpoint(model, optimizer, step, trained_tokens, train_config.checkpoint_path+f"/{step}")
-        
-        if train_config.max_steps is not None and step >= train_config.max_steps:
-            break
+                loss = train_step(model, data_loader, device)
 
-        if train_config.max_tokens is not None and trained_tokens >= train_config.max_tokens:
-            break
+            if train_config.run_profile:
+                p.step()
+                
+            loss = average_loss_across_dp_cp_ranks(loss, device)
 
-        if train_config.max_time is not None and end_time - start_time >= train_config.max_time:
-            break
+            if parallel_config.dp_engine == "naive":
+                model.synchronize_gradients()
+            
+            optimizer.step()
+            trained_tokens += tokens_per_step
+            step += 1
+            
+            if hasattr(model, 'reset'):
+                model.reset()
 
-        end_time = time.time()
+            step_duration = time.time() - step_start_time
+            tokens_per_second = tokens_per_step / step_duration
+            tokens_per_second_per_gpu = tokens_per_second / world_size
+            mfu = get_mfu(tokens_per_second_per_gpu, num_params, config)
+            
+            if global_rank == 0:
+                goodput_log = goodput_metrics.metrics(time.time(), loss)
+                experiment_print = None
+                if train_config.max_tokens:
+                    experiment_print = f"Tok: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
+                elif train_config.max_time:
+                    experiment_print = f"Time: {to_readable_format(end_time - start_time):>7s}{('/' + to_readable_format(train_config.max_time)) if train_config.max_time else ''} | "
+                elif train_config.max_steps:
+                    experiment_print = f"Step: {step:>7d}{('/' + to_readable_format(train_config.max_steps)) if train_config.max_steps else ''} | "
+                elif train_config.max_loss:
+                    experiment_print = f"Loss: {loss:>7s}{('/' + to_readable_format(train_config.max_loss)) if train_config.max_loss else ''} | "
+                else:
+                    experiment_print = ""
+                logger.info(
+                    f"[rank {pgm.process_group_manager.global_rank}] "
+                    f"Step: {step:<5d} | "
+                    f"Loss: {loss:6.4f} | "
+                    f"Global batch size: {to_readable_format(tokens_per_step):>7s} | "
+                    f"Tok/s: {to_readable_format(tokens_per_second):>7s} | "
+                    f"Tok/s/GPU: {to_readable_format(tokens_per_second_per_gpu):>7s} | "
+                    f"{experiment_print}"
+                    f"MFU: {mfu:5.2f}% | "
+                    f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB | "
+                    f"T: {goodput_log['throughput']:6.4f} | "
+                    f"SE: {goodput_log['statistical_efficiency']:6.4f} | "
+                    f"G: {goodput_log['goodput']:6.4f} | "
+                )
+            
+                if train_config.use_wandb:
+                    wandb_log = {
+                        "loss": loss,
+                        "tokens_per_step": tokens_per_step,
+                        "tokens_per_second": tokens_per_step / step_duration,
+                        "mfu": mfu,
+                        "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
+                        "memory_usage": torch.cuda.memory_reserved() / 1e9,
+                        "trained_tokens": trained_tokens,
+                        "goodput": goodput_log["goodput"],
+                        "throughput": goodput_log["throughput"],
+                        "statistical_efficiency": goodput_log["statistical_efficiency"]
+                    }
+                    wandb.log(wandb_log)
+            
+            if step % train_config.save_frequency == 0:
+                checkpoint_manager.save_checkpoint(model, optimizer, step, trained_tokens, train_config.checkpoint_path+f"/{step}")
+            
+            if train_config.max_steps is not None and step >= train_config.max_steps:
+                break
+
+            if train_config.max_tokens is not None and trained_tokens >= train_config.max_tokens:
+                break
+
+            if train_config.max_time is not None and end_time - start_time >= train_config.max_time:
+                break
+
+            if train_config.max_loss is not None and loss <= train_config.max_loss:
+                break
+
+            end_time = time.time()
 
     if global_rank == 0 and train_config.use_wandb:
         wandb.finish()

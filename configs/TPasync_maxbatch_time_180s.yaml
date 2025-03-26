@@ -15,6 +15,8 @@ train_config:
   use_compile: False
   attn_implementation: "flash_attention_2"
 
+  run_profile: True
+
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 
@@ -24,7 +26,7 @@ parallel_config:
   dp_size: 1
 
   dp_engine: "fsdp"
-  tp_engine: "sync"
+  tp_engine: "async"
   zero_stage: 3
 
 

@@ -1,5 +1,8 @@
+import os
+
 from typing import Literal
 from pydantic_config import BaseConfig
+from pydantic import model_validator
 
 class ModelConfig(BaseConfig):
     name: str
@@ -15,6 +18,7 @@ class TrainConfig(BaseConfig):
     max_seq_length: int
     max_tokens: int | None = None
     max_time: int | None = None
+    max_loss: float | None = None
 
     num_samples: int | None = None
 
@@ -35,6 +39,28 @@ class TrainConfig(BaseConfig):
     use_compile: bool = False
     attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "eager"
 
+    # profiling
+    run_profile: bool = False
+    wait_steps: int | None = None
+    warmup_steps: int | None = None
+    active_steps: int | None = None
+    num_cycles: int | None = None
+    profile_path: str = "profile"
+    profile_memory: bool = True
+    with_stack: bool = True
+    record_shapes: bool = True
+    with_flops: bool = True
+
+    @model_validator(mode="after")
+    def validate_profile(self):
+        if self.run_profile:
+            if os.environ["RANK"] == "0":
+                print("Profiling is enabled, enable max_steps = 10")
+                self.max_steps = 10
+                self.max_tokens = None
+                self.max_time = None
+        return self
+
 class DataConfig(BaseConfig):
     path: str
     num_workers: int = 4
@@ -46,7 +72,7 @@ class ParallelConfig(BaseConfig):
     tp_size: int = 1
     pp_size: int = 1
     dp_size: int = 1
-    dp_engine: Literal["ddp", "naive", "bucket", "fsdp"] = "bucket"
+    dp_engine: Literal["ddp", "naive", "bucket", "fsdp", "wait_free"] = "bucket"
     zero_stage: int = 3
 
     # PP settings

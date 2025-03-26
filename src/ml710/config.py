@@ -13,11 +13,13 @@ class TrainConfig(BaseConfig):
     per_device_train_batch_size: int
     gradient_accumulation_steps: int
     max_seq_length: int
-    max_tokens: int = 100_000
+    max_tokens: int | None = None
+    max_time: int | None = None
+
     num_samples: int | None = None
 
     # How to define this?
-    total_train_steps: int = 200
+    max_steps: int | None = None
 
     # logging
     use_wandb: bool = True
@@ -49,3 +51,4 @@ class ParallelConfig(BaseConfig):
 
     # PP settings
     pp_engine: Literal["afab", "1f1b"] = "afab"
+    tp_engine: Literal["sync", "async"] = "sync"

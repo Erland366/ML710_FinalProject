@@ -173,7 +173,7 @@ class InitializationManager:
             return tensor
 
         # Handle attention layers
-        if 'attention' in name:
+        if 'self_attn' in name:
             head_dim = hidden_size // self.model_config.num_attention_heads
             
             if 'q_proj.weight' in name:
@@ -184,8 +184,8 @@ class InitializationManager:
                 total_heads = self.model_config.num_key_value_heads
                 heads_per_rank = total_heads // tp_size
                 target_dim = heads_per_rank * head_dim
-            elif 'out_proj.weight' in name:
-                # For out_proj, we split along the second dimension
+            elif 'o_proj.weight' in name:
+                # For o_proj, we split along the second dimension
                 target_dim = tensor.shape[0]  # First dimension stays the same
                 if tensor.shape[1] != hidden_size // tp_size:
                     tensor = tensor[:, (hidden_size // tp_size) * tp_rank:(hidden_size // tp_size) * (tp_rank + 1)]

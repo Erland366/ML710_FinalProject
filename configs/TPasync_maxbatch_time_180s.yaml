@@ -2,9 +2,12 @@ train_config:
   lr: 1e-3
   seed: 3407
 
+  # max_time : 30
+  max_tokens: 50_000
+
   per_device_train_batch_size: 8
   gradient_accumulation_steps: 1
-  max_seq_length: 512
+  max_seq_length: 4096
 
   run_name: "Microllama-fineweb-edu-base"
   pretrain: False
@@ -21,6 +24,7 @@ parallel_config:
   dp_size: 1
 
   dp_engine: "fsdp"
+  tp_engine: "sync"
   zero_stage: 3
 
 

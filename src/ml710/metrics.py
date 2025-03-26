@@ -1,31 +1,54 @@
 import time
 
 class GoodputMetrics:
-    def __init__(self, window_size: int, mini_batch_size: int) -> None:
-        self.window_size = window_size
+    def __init__(self, window_size: int, grad_acc_steps: int, mini_batch_size: int) -> None:
+        self.grad_acc_steps = grad_acc_steps
         self.mini_batch_size = mini_batch_size
-        self.last_loss = 0
-        self.last_time = time.time()
+        self.global_batch_size = self.mini_batch_size * self.grad_acc_steps # Samples per step
+
+        self.last_loss = 0.0
+        self.start_time = time.time()
+        self.last_end_time = self.start_time
         self.eps = 1e-6
+        self.initialized = False
+        self.window_size = window_size
 
     def reset_time(self) -> None:
-        self.last_time = time.time()
+        self.start_time = time.time()
+        self.last_end_time = self.start_time
+        self.initialized = False
 
-    def _throughput(self, time) -> float:
-        return (self.mini_batch_size * self.window_size) / (abs(time - self.last_time) + self.eps)
+    # Standard Throughput: Samples / sec
+    def _throughput(self, current_end_time) -> float:
+        duration = (current_end_time - self.last_end_time) + self.eps
+        return (self.global_batch_size * self.window_size) / duration
 
+    # Standard Statistical Efficiency: Loss change / sample
     def _statistical_efficiency(self, new_loss) -> float:
-        return abs(new_loss - self.last_loss) / ((self.window_size * self.mini_batch_size) + self.eps)
+        if not self.initialized:
+            return 0.0
+        loss_change = abs(new_loss - self.last_loss)
+        return loss_change / (self.window_size * (self.global_batch_size + self.eps))
 
-    def _goodput(self, time, new_loss) -> float:
-        return self._throughput(time) * self._statistical_efficiency(new_loss)
+    # Goodput: Throughput * SE = (Samples/sec) * (Loss change / Sample) = Loss change / sec
+    def _goodput(self, current_end_time, new_loss) -> float:
+        # Method 1: Definition
+        return self._throughput(current_end_time) * self._statistical_efficiency(new_loss)
 
-    def metrics(self, time, new_loss) -> dict:
-        metrics = {
-            "throughput": self._throughput(time),
-            "statistical_efficiency": self._statistical_efficiency(new_loss),
-            "goodput": self._goodput(time, new_loss),
-        }
+    def metrics(self, current_end_time, new_loss) -> dict:
+        # Calculate metrics *before* updating state
+        throughput = self._throughput(current_end_time) # Standard definition
+        statistical_efficiency = self._statistical_efficiency(new_loss) # Standard definition
+        goodput = self._goodput(current_end_time, new_loss) # loss_change / sec
+
+        # Update state
         self.last_loss = new_loss
-        self.last_time = time
+        self.last_end_time = current_end_time
+        self.initialized = True
+
+        metrics = {
+            "throughput": throughput,
+            "statistical_efficiency": statistical_efficiency,
+            "goodput": goodput,
+        }
         return metrics

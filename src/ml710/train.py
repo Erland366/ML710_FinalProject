@@ -1,3 +1,32 @@
+"""
+model = LlamaForCausalLM(
+  (model): LlamaModel(
+    (embed_tokens): Embedding(32000, 1024)
+    (layers): ModuleList(
+      (0-11): 12 x LlamaDecoderLayer(
+        (self_attn): LlamaAttention(
+          (q_proj): Linear(in_features=1024, out_features=1024, bias=False)
+          (k_proj): Linear(in_features=1024, out_features=256, bias=False)
+          (v_proj): Linear(in_features=1024, out_features=256, bias=False)
+          (o_proj): Linear(in_features=1024, out_features=1024, bias=False)
+        )
+        (mlp): LlamaMLP(
+          (gate_proj): Linear(in_features=1024, out_features=5632, bias=False)
+          (up_proj): Linear(in_features=1024, out_features=5632, bias=False)
+          (down_proj): Linear(in_features=5632, out_features=1024, bias=False)
+          (act_fn): SiLU()
+        )
+        (input_layernorm): LlamaRMSNorm((1024,), eps=1e-05)
+        (post_attention_layernorm): LlamaRMSNorm((1024,), eps=1e-05)
+      )
+    )
+    (norm): LlamaRMSNorm((1024,), eps=1e-05)
+    (rotary_emb): LlamaRotaryEmbedding()
+  )
+  (lm_head): Linear(in_features=1024, out_features=32000, bias=False)
+)
+"""
+
 import inspect
 import os
 import time
@@ -16,7 +45,7 @@ from picotron.data import MicroBatchDataLoader
 from picotron.utils import average_loss_across_dp_cp_ranks, set_all_seed, print, to_readable_format, get_mfu, get_num_params, download_model
 from picotron.data_parallel.data_parallel import DataParallelNaive, DataParallelBucket
 from picotron.tensor_parallel.tensor_parallel import apply_tensor_parallel
-from picotron.pipeline_parallel.pipeline_parallel import train_step_pipeline_1f1b, train_step_pipeline_afab, PipelineParallel
+from pipeline_parallel import train_step_pipeline_1f1b, train_step_pipeline_afab, PipelineParallel
 from pydantic_config import parse_argv
 from pydantic import validate_call
 from safetensors.torch import load_file
@@ -65,6 +94,8 @@ def main(
     parallel_config: ParallelConfig,
     model_config: ModelConfig
 ):
+    assert train_config.max_tokens is not None or train_config.max_time is not None, "Either max_tokens or max_time must be set"
+
     local_rank = int(os.environ["LOCAL_RANK"])
     global_rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
@@ -112,6 +143,7 @@ def main(
         split=data_config.split
     )
 
+    
     if not train_config.pretrain and pgm.process_group_manager.global_rank == 0:
         download_model(model_config.name, os.environ["HF_TOKEN"])
 
@@ -168,13 +200,13 @@ def main(
 
         # Still buggy, need to fix this!
         if pgm.process_group_manager.tp_world_size > 1:
-            model = apply_tensor_parallel(model)
+            model = apply_tensor_parallel(model, parallel_config.tp_engine == "async")
 
         if pgm.process_group_manager.pp_world_size > 1:
             model = PipelineParallel(model, config)
 
 
-    model = init_model_with_materialized_weights(model, config, save_dir=f"./hf_model_safetensors/")
+    model = init_model_with_materialized_weights(model, config, save_dir="./hf_model_safetensors/")
 
     model.to(dtype).to(device)
 
@@ -217,10 +249,23 @@ def main(
     
     dist.barrier()
 
-    goodput_metrics = GoodputMetrics(window_size=1, mini_batch_size=train_config.per_device_train_batch_size * pgm.process_group_manager.dp_world_size)
+    goodput_metrics = GoodputMetrics(
+        window_size=1, 
+        grad_acc_steps=train_config.gradient_accumulation_steps,
+        mini_batch_size=train_config.per_device_train_batch_size * pgm.process_group_manager.dp_world_size
+    )
     goodput_metrics.reset_time()
 
-    while train_config.max_tokens is None or trained_tokens < train_config.max_tokens:
+    start_time = time.time()
+    end_time = time.time()
+
+    while (train_config.max_tokens is None 
+        or trained_tokens < train_config.max_tokens 
+        or train_config.max_time is None 
+        or end_time - start_time < train_config.max_time
+        or train_config.max_steps is None
+        or step < train_config.max_steps
+    ):
         step_start_time = time.time()
         optimizer.zero_grad()
         
@@ -249,7 +294,16 @@ def main(
         mfu = get_mfu(tokens_per_second_per_gpu, num_params, config)
         
         if global_rank == 0:
-            goodput_log = goodput_metrics.metrics(step_duration, loss)
+            goodput_log = goodput_metrics.metrics(time.time(), loss)
+            experiment_print = None
+            if train_config.max_tokens:
+                experiment_print = f"Tok: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
+            elif train_config.max_time:
+                experiment_print = f"Time: {to_readable_format(end_time - start_time):>7s}{('/' + to_readable_format(train_config.max_time)) if train_config.max_time else ''} | "
+            elif train_config.max_steps:
+                experiment_print = f"Step: {step:>7d}{('/' + to_readable_format(train_config.max_steps)) if train_config.max_steps else ''} | "
+            else:
+                experiment_print = ""
             logger.info(
                 f"[rank {pgm.process_group_manager.global_rank}] "
                 f"Step: {step:<5d} | "
@@ -257,7 +311,7 @@ def main(
                 f"Global batch size: {to_readable_format(tokens_per_step):>7s} | "
                 f"Tok/s: {to_readable_format(tokens_per_second):>7s} | "
                 f"Tok/s/GPU: {to_readable_format(tokens_per_second_per_gpu):>7s} | "
-                f"Tok: {to_readable_format(trained_tokens):>7s}{('/' + to_readable_format(train_config.max_tokens)) if train_config.max_tokens else ''} | "
+                f"{experiment_print}"
                 f"MFU: {mfu:5.2f}% | "
                 f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB | "
                 f"T: {goodput_log['throughput']:6.4f} | "
@@ -283,8 +337,16 @@ def main(
         if step % train_config.save_frequency == 0:
             checkpoint_manager.save_checkpoint(model, optimizer, step, trained_tokens, train_config.checkpoint_path+f"/{step}")
         
-        if step >= train_config.total_train_steps:
+        if train_config.max_steps is not None and step >= train_config.max_steps:
             break
+
+        if train_config.max_tokens is not None and trained_tokens >= train_config.max_tokens:
+            break
+
+        if train_config.max_time is not None and end_time - start_time >= train_config.max_time:
+            break
+
+        end_time = time.time()
 
     if global_rank == 0 and train_config.use_wandb:
         wandb.finish()

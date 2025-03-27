@@ -7,6 +7,9 @@ from picotron.pipeline_parallel.pp_communications import pipeline_communicate, b
 from transformers.models.llama.modeling_llama import LlamaRotaryEmbedding, LlamaModel
 from transformers.cache_utils import DynamicCache
 from transformers.modeling_outputs import BaseModelOutputWithPast
+from ml710.utils import create_logger
+
+logger = create_logger(pgm, name="ml710")
 
 class PipelineParallel(nn.Module):
     def __init__(self, model, config):

@@ -21,8 +21,8 @@ data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 
 parallel_config:
-  tp_size: 1
-  pp_size: 2
+  tp_size: 2
+  pp_size: 1
   dp_size: 1
 
   dp_engine: "fsdp"

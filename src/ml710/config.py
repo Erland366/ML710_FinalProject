@@ -56,7 +56,7 @@ class TrainConfig(BaseConfig):
         if self.run_profile:
             if os.environ["RANK"] == "0":
                 print("Profiling is enabled, enable max_steps = 10")
-                self.max_steps = 10
+                self.max_steps = 20
                 self.max_tokens = None
                 self.max_time = None
         return self

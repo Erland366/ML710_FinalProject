@@ -30,10 +30,12 @@ model = LlamaForCausalLM(
 import inspect
 import os
 import time
+import wandb
 
 import torch
 import torch.nn.functional as F
 import picotron.process_group_manager as pgm
+import pandas as pd
 
 from functools import partial
 
@@ -225,7 +227,8 @@ def main(
         split=data_config.split
     )
 
-    
+    is_wandb_rank = pgm.process_group_manager.tp_rank == 0 and pgm.process_group_manager.dp_rank == 0 and pgm.process_group_manager.cp_rank == 0 and pgm.process_group_manager.pp_is_last_stage
+
     if not train_config.pretrain and pgm.process_group_manager.global_rank == 0:
         download_model(model_config.name, os.environ["HF_TOKEN"])
 
@@ -253,9 +256,7 @@ def main(
 
     dist.barrier()
 
-    if global_rank == 0 and train_config.use_wandb:
-        import wandb
-
+    if is_wandb_rank:
         # Better run name for logging experiments
         if pgm.process_group_manager.tp_world_size > 1:
             train_config.run_name += f"-tp_{parallel_config.tp_engine.upper()}"
@@ -279,10 +280,10 @@ def main(
 
     with init_model_with_dematerialized_weights():
         model = LlamaForCausalLM(config)
-
+        
         # Still buggy, need to fix this!
         if pgm.process_group_manager.tp_world_size > 1:
-            model = apply_tensor_parallel(model, parallel_config.tp_engine == "async")
+            model = apply_tensor_parallel(model, parallel_config.tp_engine == "sync")
 
         if pgm.process_group_manager.pp_world_size > 1:
             model = PipelineParallel(model, config)
@@ -385,8 +386,14 @@ def main(
             tokens_per_second = tokens_per_step / step_duration
             tokens_per_second_per_gpu = tokens_per_second / world_size
             mfu = get_mfu(tokens_per_second_per_gpu, num_params, config)
-            
-            if global_rank == 0:
+
+            # script_dir = os.path.dirname(os.path.abspath('erland/ML710_FinalProject/src/ml710/train.py'))
+            csv_path = os.path.join(".", "results/TP_results.csv")
+
+            # df = pd.read_csv(csv_path)
+            results = []
+
+            if is_wandb_rank:
                 goodput_log = goodput_metrics.metrics(time.time(), loss)
                 experiment_print = None
                 if train_config.max_tokens:
@@ -429,6 +436,22 @@ def main(
                     }
                     wandb.log(wandb_log)
             
+            # results.append({
+            #             "loss": loss,
+            #             "tokens_per_step": tokens_per_step,
+            #             "tokens_per_second": tokens_per_step / step_duration,
+            #             "mfu": mfu,
+            #             "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
+            #             "memory_usage": torch.cuda.memory_reserved() / 1e9,
+            #             "trained_tokens": trained_tokens,
+            #             "goodput": goodput_log["goodput"],
+            #             "throughput": goodput_log["throughput"],
+            #             "statistical_efficiency": goodput_log["statistical_efficiency"] 
+            #             })
+
+            # df.loc[len(df)] = results
+            # df.to_csv(csv_path)
+
             if step % train_config.save_frequency == 0:
                 checkpoint_manager.save_checkpoint(model, optimizer, step, trained_tokens, train_config.checkpoint_path+f"/{step}")
             

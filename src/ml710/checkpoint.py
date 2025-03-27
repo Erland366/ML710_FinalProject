@@ -52,7 +52,6 @@ def init_model_with_materialized_weights(model, model_config, save_dir):
     #Initialize model with correct tensor shapes but random weights
     initialization_manager = InitializationManager(model, model_config)
     layer_names = initialization_manager.get_layer_names_in_sft_format()
-
     # print(f"Rank {pgm.process_group_manager.global_rank} responsible for {len(layer_names)} layers")
     
     if len(layer_names) == 0:
@@ -85,8 +84,9 @@ def init_model_with_materialized_weights(model, model_config, save_dir):
                 state_dict[sft_name] = tensor
 
     # Force creation of lm_head (even if it is tie_embedding)
-    if pgm.process_group_manager.pp_is_last_stage:
-        vocab_size = model_config.vocab_size
+    if pgm.process_group_manager.pp_is_last_stage or not model.__class__.__name__ == "PipelineParallel":
+        vocab_size = model_config.vocab_size 
+
         if pgm.process_group_manager.tp_world_size > 1:
             # For TP>1, the final_proj is already wrapped in ColumnParallel
             # Just need to initialize state_dict with correct sharded size
@@ -106,7 +106,7 @@ def init_model_with_materialized_weights(model, model_config, save_dir):
 
     assert_no_meta_tensors(model)
     # Initialize model parameters
-    # initialization_manager.init_model_parameters()
+    # initialization_manager.init_model_parameters() # was commented
     dist.barrier()
     return model
 
@@ -134,10 +134,10 @@ class InitializationManager:
         
         # Generate base layer names
         layer_names = []
-        # if isinstance(self.model, PipelineParallel):
-        base_names = [f"model.layers.{id}" for id in self.model.model.layer_distribution]
-        # else:
-        #     base_names = [f"model.layers.{id}" for id in range(self.model_config.num_hidden_layers)]
+        if self.model.__class__.__name__ == "PipelineParallel":
+            base_names = [f"model.layers.{id}" for id in self.model.model.layer_distribution]
+        else:
+            base_names = [f"model.layers.{id}" for id in range(self.model_config.num_hidden_layers)]
         
         for layer in base_names:
             for component in decoder_components:
@@ -145,14 +145,14 @@ class InitializationManager:
        
         # Add special layers based on pipeline stage or non-PP case
         # NOTE: Safetensors may have tied embeddings, but Picotron does not support it. We always create a new lm_head.
-        # if isinstance(self.model, PipelineParallel):
-        if pgm.process_group_manager.pp_is_first_stage:
+        if self.model.__class__.__name__ == "PipelineParallel":
+            if pgm.process_group_manager.pp_is_first_stage:
+                layer_names.insert(0, "model.embed_tokens.weight")
+            elif pgm.process_group_manager.pp_is_last_stage:
+                layer_names.extend(["model.norm.weight"])
+        else:
             layer_names.insert(0, "model.embed_tokens.weight")
-        elif pgm.process_group_manager.pp_is_last_stage:
-            layer_names.extend(["model.norm.weight"])
-        # else:
-        #     layer_names.insert(0, "model.embed_tokens.weight")
-        #     layer_names.extend(["model.norm.weight"])
+            layer_names.extend(["model.norm.weight"]) 
 
         return layer_names
 

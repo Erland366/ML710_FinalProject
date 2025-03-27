@@ -8,6 +8,7 @@ from torch import nn
 
 from torch.distributed.fsdp import fully_shard, MixedPrecisionPolicy
 from torch import distributed as dist
+from picotron import process_group_manager as pgm
 
 class FSDP():
     def __init__(self, model: nn.Module, zero_stage: int):

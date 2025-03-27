@@ -287,7 +287,6 @@ def main(
         if pgm.process_group_manager.pp_world_size > 1:
             model = PipelineParallel(model, config)
 
-
     model = init_model_with_materialized_weights(model, config, save_dir="./hf_model_safetensors/")
 
     model.to(dtype).to(device)
@@ -342,7 +341,8 @@ def main(
 
     start_time = time.time()
     end_time = time.time()
-
+    loss = float("inf")
+    
     with prof as p:
         while (train_config.max_tokens is None 
             or trained_tokens < train_config.max_tokens 

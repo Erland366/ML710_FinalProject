@@ -24,7 +24,7 @@ parallel_config:
   pp_size: 1
   dp_size: 2
 
-  dp_engine: "fsdp"
+  dp_engine: "naive"
   zero_stage: 3
 
 

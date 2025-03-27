@@ -367,7 +367,7 @@ def main(
             else:
                 loss = train_step(model, data_loader, device)
 
-            if train_config.run_profile:
+            if train_config.run_profile and global_rank == 0:
                 p.step()
                 
             loss = average_loss_across_dp_cp_ranks(loss, device)

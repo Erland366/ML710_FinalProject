@@ -46,7 +46,6 @@ class DataParallelNaive(nn.Module):
         self.module = module
         # whether to synchronize gradients during backward pass. Set to False when using gradient accumulation
         self.require_backward_grad_sync = True
-        self.register_backward_hook(self._allreduce_grads)
     
     def forward(self, *inputs, **kwargs):
         return self.module(*inputs, **kwargs)

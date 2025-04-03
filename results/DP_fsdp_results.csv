@@ -1,2 +1,0 @@
-loss,tokens_per_step,tokens_per_second,mfu,tokens_per_second_per_gpu,memory_usage,trained_tokens,goodput,throughput,statistical_efficiency,batch_size,max_seq_length
-1,512,27909617053,0.756941654211851,3516.7139548085265,3.445620736,1124632,0.4244925948299353,27.167539652878894,0.015624992187503906,1,512

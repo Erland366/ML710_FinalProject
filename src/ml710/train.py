@@ -469,12 +469,14 @@ def main(
                 break
 
             end_time = time.time()
-    
-    results['batch_size'] = train_config.per_device_train_batch_size
-    results['max_seq_length'] = train_config.max_seq_length
-    df.loc[len(df)] = results
 
-    df.to_csv(csv_path, index=False)
+    if len(results) != 0:
+        print(results)
+        print(len(df))
+        results['batch_size'] = train_config.per_device_train_batch_size
+        results['max_seq_length'] = train_config.max_seq_length
+        df.loc[len(df)] = results
+        df.to_csv(csv_path, index=False)
 
     if global_rank == 0 and train_config.use_wandb:
         wandb.finish()

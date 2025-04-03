@@ -14,11 +14,11 @@ We need to make sure that
 # Parallel Strategies
 - [x] Data Parallelism
     - [x] Naive
-    - [ ] Wait-free backpropagation
+    - [x] Wait-free backpropagation
     - [x] Bucketing
     - [x] FSDP
-- [ ] Model Parallelism
-- [ ] Pipeline Parallelism
+- [x] Model Parallelism
+- [x] Pipeline Parallelism
 <!-- - [ ] Data + Model Parallelism (Need at least 4 GPUs) -->
 
 # How to Install

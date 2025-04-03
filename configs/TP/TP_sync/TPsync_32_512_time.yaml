@@ -1,10 +1,12 @@
 train_config:
-  lr: 1e-4
+  lr: 1e-6
   seed: 3407
 
-  per_device_train_batch_size: 4
+  max_time : 180
+
+  per_device_train_batch_size: 32
   gradient_accumulation_steps: 1
-  max_seq_length: 512
+  max_seq_length: 512  
 
   run_name: "Microllama-fineweb-edu-base"
   pretrain: False
@@ -12,20 +14,17 @@ train_config:
   use_compile: False
   attn_implementation: "flash_attention_2"
 
-  max_steps: 1000 #TEST
-
-  run_profile: True
+  results_file: "TP_results"
 
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 
 parallel_config:
-  tp_size: 1
-  pp_size: 2
+  tp_size: 2
+  pp_size: 1
   dp_size: 1
 
-  dp_engine: "bucket"
-  pp_engine: "afab"
+  dp_engine: "fsdp"
   zero_stage: 3
 
 

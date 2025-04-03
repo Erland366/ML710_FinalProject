@@ -273,7 +273,7 @@ def main(
         config_dict.update(config.to_dict())
 
         wandb.init(
-            project="ml710",
+            project="ml710_FINALproject",
             name=f"{train_config.run_name}-{to_readable_format(tokens_per_step)}-{pgm.process_group_manager}",
             config=config_dict
         )
@@ -344,6 +344,21 @@ def main(
     end_time = time.time()
     loss = float("inf")
     
+    csv_path = os.path.join(".", "results")
+    csv_path = csv_path + '/' + train_config.results_file +'.csv'
+
+    if os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:
+        df = pd.read_csv(csv_path)
+    else:
+        df = pd.DataFrame(columns=[
+            "loss", "tokens_per_step", "tokens_per_second", "mfu", 
+            "tokens_per_second_per_gpu", "memory_usage", "trained_tokens", 
+            "goodput", "throughput", "statistical_efficiency", "batch_size",
+            "max_seq_length"
+        ])
+
+    results = {}
+
     with prof as p:
         while (train_config.max_tokens is None 
             or trained_tokens < train_config.max_tokens 
@@ -357,6 +372,13 @@ def main(
             step_start_time = time.time()
             optimizer.zero_grad()
             
+            #YASMEEN: Initialize goodput_log with default values to avoid UnboundLocalError
+            goodput_log = {
+                "goodput": 0.0,
+                "throughput": 0.0,
+                "statistical_efficiency": 0.0
+            }
+
             if pgm.process_group_manager.pp_world_size > 1:
                 if parallel_config.pp_engine == "afab":
                     loss = train_step_pipeline_afab(model, data_loader, tensor_shapes, device, dtype)
@@ -386,12 +408,6 @@ def main(
             tokens_per_second = tokens_per_step / step_duration
             tokens_per_second_per_gpu = tokens_per_second / world_size
             mfu = get_mfu(tokens_per_second_per_gpu, num_params, config)
-
-            # script_dir = os.path.dirname(os.path.abspath('erland/ML710_FinalProject/src/ml710/train.py'))
-            csv_path = os.path.join(".", "results/TP_results.csv")
-
-            # df = pd.read_csv(csv_path)
-            results = []
 
             if is_wandb_rank:
                 goodput_log = goodput_metrics.metrics(time.time(), loss)
@@ -434,23 +450,8 @@ def main(
                         "throughput": goodput_log["throughput"],
                         "statistical_efficiency": goodput_log["statistical_efficiency"]
                     }
+                    results = wandb_log
                     wandb.log(wandb_log)
-            
-            # results.append({
-            #             "loss": loss,
-            #             "tokens_per_step": tokens_per_step,
-            #             "tokens_per_second": tokens_per_step / step_duration,
-            #             "mfu": mfu,
-            #             "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
-            #             "memory_usage": torch.cuda.memory_reserved() / 1e9,
-            #             "trained_tokens": trained_tokens,
-            #             "goodput": goodput_log["goodput"],
-            #             "throughput": goodput_log["throughput"],
-            #             "statistical_efficiency": goodput_log["statistical_efficiency"] 
-            #             })
-
-            # df.loc[len(df)] = results
-            # df.to_csv(csv_path)
 
             if step % train_config.save_frequency == 0:
                 checkpoint_manager.save_checkpoint(model, optimizer, step, trained_tokens, train_config.checkpoint_path+f"/{step}")
@@ -468,6 +469,12 @@ def main(
                 break
 
             end_time = time.time()
+    
+    results['batch_size'] = train_config.per_device_train_batch_size
+    results['max_seq_length'] = train_config.max_seq_length
+    df.loc[len(df)] = results
+
+    df.to_csv(csv_path, index=False)
 
     if global_rank == 0 and train_config.use_wandb:
         wandb.finish()

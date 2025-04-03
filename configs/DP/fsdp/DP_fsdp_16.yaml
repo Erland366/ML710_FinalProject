@@ -4,7 +4,7 @@ train_config:
 
   max_time : 180
 
-  per_device_train_batch_size: 1
+  per_device_train_batch_size: 16
   gradient_accumulation_steps: 1
   max_seq_length: 512  
 
@@ -14,13 +14,15 @@ train_config:
   use_compile: False
   attn_implementation: "flash_attention_2"
 
+  results_file: "DP_fsdp_results"
+  
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 
 parallel_config:
-  tp_size: 2
+  tp_size: 1
   pp_size: 1
-  dp_size: 1
+  dp_size: 2
 
   dp_engine: "fsdp"
   zero_stage: 3

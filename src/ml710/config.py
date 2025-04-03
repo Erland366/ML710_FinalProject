@@ -51,6 +51,9 @@ class TrainConfig(BaseConfig):
     record_shapes: bool = True
     with_flops: bool = True
 
+    # Results file name 
+    results_file: str | None = None
+
     @model_validator(mode="after")
     def validate_profile(self):
         if self.run_profile:

@@ -273,7 +273,7 @@ def main(
         config_dict.update(config.to_dict())
 
         wandb.init(
-            project="ml710_FINALproject",
+            project="ml710_FINALFINALFINALproject",
             name=f"{train_config.run_name}-{to_readable_format(tokens_per_step)}-{pgm.process_group_manager}",
             config=config_dict
         )
@@ -433,7 +433,7 @@ def main(
                     f"MFU: {mfu:5.2f}% | "
                     f"Memory usage: {torch.cuda.memory_reserved() / 1e9:6.2f}GB | "
                     f"T: {goodput_log['throughput']:6.4f} | "
-                    f"SE: {goodput_log['statistical_efficiency']:6.4f} | "
+                    f"SE: {goodput_log['statistical_efficiency']:.4e} | "
                     f"G: {goodput_log['goodput']:6.4f} | "
                 )
             

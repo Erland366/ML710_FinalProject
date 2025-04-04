@@ -13,7 +13,7 @@ for type in "${parallelism_types[@]}"; do
             echo "Running with ${config_file}"
             CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun \
                 --nproc_per_node 2 \
-                src/ml710/train.py @ "$config_file"
+                src/ml710/train.py @ "$config_file" --train_config.lr 0.001
             echo "Finished running ${config_file}"
         else
             echo "Warning: Config file not found, skipping: ${config_file}"

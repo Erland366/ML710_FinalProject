@@ -25,8 +25,6 @@ class GoodputMetrics:
 
     # Standard Statistical Efficiency: Loss change / sample
     def _statistical_efficiency(self, new_loss) -> float:
-        if not self.initialized:
-            return 0.0
         loss_change = abs(new_loss - self.last_loss)
         return loss_change / (self.window_size * (self.global_batch_size + self.eps))
 

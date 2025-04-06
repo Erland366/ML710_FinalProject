@@ -273,7 +273,7 @@ def main(
         config_dict.update(config.to_dict())
 
         wandb.init(
-            project="ml710_FINALFINALFINALproject",
+            project="ml710_FINALFINALFINALFINALproject",
             name=f"{train_config.run_name}-{to_readable_format(tokens_per_step)}-{pgm.process_group_manager}",
             config=config_dict
         )
@@ -345,6 +345,8 @@ def main(
     loss = float("inf")
     
     csv_path = os.path.join(".", "results")
+    if not os.path.exists(csv_path):
+        os.makedirs(csv_path)
     csv_path = csv_path + '/' + train_config.results_file +'.csv'
 
     if os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:

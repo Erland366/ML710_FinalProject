@@ -54,6 +54,9 @@ class TrainConfig(BaseConfig):
     # Results file name 
     results_file: str | None = None
 
+    # Goodput
+    window_size: int = 1
+
     @model_validator(mode="after")
     def validate_profile(self):
         if self.run_profile:

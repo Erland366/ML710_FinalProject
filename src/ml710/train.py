@@ -209,8 +209,6 @@ def main(
         on_trace_ready=callback
     ) if train_config.run_profile else nullcontext()
 
-    logger.info(f"{pgm.process_group_manager.tp_world_size = }")
-
     set_seed(train_config.seed)
 
     data_loader = MicroBatchDataLoader(
@@ -333,7 +331,7 @@ def main(
     dist.barrier()
 
     goodput_metrics = GoodputMetrics(
-        window_size=1, 
+        window_size=train_config.window_size, 
         grad_acc_steps=train_config.gradient_accumulation_steps,
         mini_batch_size=train_config.per_device_train_batch_size * pgm.process_group_manager.dp_world_size
     )

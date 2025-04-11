@@ -7,6 +7,7 @@ class GoodputMetrics:
         self.mini_batch_size = mini_batch_size
         self.global_batch_size = self.mini_batch_size * self.grad_acc_steps # Samples per step
 
+        self.losses = []
         self.last_loss = 0.0
         self.start_time = time.time()
         self.last_end_time = self.start_time
@@ -22,17 +23,18 @@ class GoodputMetrics:
         self.last_end_time = self.start_time
         self.initialized = False
 
-    # Standard Throughput: Samples / sec
     def _throughput(self, current_end_time) -> float:
         duration = (current_end_time - self.last_end_time) + self.eps
         return (self.global_batch_size * self.window_size) / duration
 
-    # Standard Statistical Efficiency: Loss change / sample
     def _statistical_efficiency(self, new_loss) -> float:
-        loss_change = abs(new_loss - self.last_loss)
-        return loss_change / (self.window_size * (self.global_batch_size + self.eps))
+        self.losses.append(new_loss)
+        if len(self.losses) > self.window_size:
+            loss_change = abs(self.losses[-1] - self.losses[-(self.window_size + 1)])
+            return loss_change / ((self.window_size * self.global_batch_size) + self.eps)
+        else:
+            return 1.0
 
-    # Goodput: Throughput * SE = (Samples/sec) * (Loss change / Sample) = Loss change / sec
     def _goodput(self, current_end_time, new_loss) -> float:
         return self._throughput(current_end_time) * self._statistical_efficiency(new_loss)
 

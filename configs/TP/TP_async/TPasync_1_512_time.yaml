@@ -16,6 +16,8 @@ train_config:
   attn_implementation: "flash_attention_2"
 
   run_profile: False
+  
+  results_file: "TP_async_results"
 
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"

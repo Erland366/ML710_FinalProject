@@ -14,17 +14,18 @@ train_config:
   use_compile: False
   attn_implementation: "flash_attention_2"
 
-  results_file: "TP_sync_results"
+  results_file: "PP_afab_results"
 
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 
 parallel_config:
-  tp_size: 2
-  pp_size: 1
+  tp_size: 1
+  pp_size: 2
   dp_size: 1
 
-  dp_engine: "fsdp"
+  dp_engine: "bucket"
+  pp_engine: "afab"
   zero_stage: 3
 
 

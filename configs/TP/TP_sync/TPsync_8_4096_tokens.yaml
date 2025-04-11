@@ -15,7 +15,7 @@ train_config:
   use_compile: False
   attn_implementation: "flash_attention_2"
 
-  results_file: "TP_results"
+  results_file: "TP_sync_results"
 
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"

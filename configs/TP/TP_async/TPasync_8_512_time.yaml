@@ -17,6 +17,8 @@ train_config:
 
   run_profile: False
 
+  results_file: "TP_async_results"
+
 data_config:
   path: "Erland/fineweb-edu-cleaned-simplified-subset"
 

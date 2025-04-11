@@ -281,7 +281,6 @@ def main(
     with init_model_with_dematerialized_weights():
         model = LlamaForCausalLM(config)
         
-        # Still buggy, need to fix this!
         if pgm.process_group_manager.tp_world_size > 1:
             model = apply_tensor_parallel(model, parallel_config.tp_engine == "sync")
 
@@ -355,7 +354,7 @@ def main(
         df = pd.DataFrame(columns=[
             "loss", "tokens_per_step", "tokens_per_second", "mfu", 
             "tokens_per_second_per_gpu", "memory_usage", "trained_tokens", 
-            "goodput", "throughput", "statistical_efficiency", "batch_size",
+            "goodput", "throughput", "statistical_efficiency", "avg_goodput", "avg_throughput", "avg_statistical_efficiency", "batch_size",
             "max_seq_length"
         ])
 
@@ -437,6 +436,9 @@ def main(
                     f"T: {goodput_log['throughput']:6.4f} | "
                     f"SE: {goodput_log['statistical_efficiency']:.4e} | "
                     f"G: {goodput_log['goodput']:6.4f} | "
+                    f"Avg T: {goodput_log['goodput']:6.4f} | "
+                    f"Avg SE: {goodput_log['goodput']:6.4f} | "
+                    f"Avg G: {goodput_log['goodput']:6.4f} | "
                 )
             
                 if train_config.use_wandb:
@@ -450,7 +452,10 @@ def main(
                         "trained_tokens": trained_tokens,
                         "goodput": goodput_log["goodput"],
                         "throughput": goodput_log["throughput"],
-                        "statistical_efficiency": goodput_log["statistical_efficiency"]
+                        "statistical_efficiency": goodput_log["statistical_efficiency"],
+                        "avg_throughput": goodput_log["avg_throughput"],
+                        "avg_statistical_efficiency": goodput_log["avg_statistical_efficiency"],
+                        "avg_goodput": goodput_log["avg_goodput"],
                     }
                     results = wandb_log
                     wandb.log(wandb_log)

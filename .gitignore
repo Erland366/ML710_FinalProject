@@ -177,3 +177,4 @@ wandb/
 hf_model_safetensors/
 checkpoints/
 profile/
+results/*.csv

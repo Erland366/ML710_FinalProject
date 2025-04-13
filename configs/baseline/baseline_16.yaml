@@ -1,0 +1,28 @@
+train_config:
+  lr: 1e-6
+  seed: 3407
+
+  max_time : 180
+
+  per_device_train_batch_size: 16
+  gradient_accumulation_steps: 1
+  max_seq_length: 512  
+
+  run_name: "Microllama-fineweb-edu-base"
+  pretrain: False
+
+  use_compile: False
+  attn_implementation: "flash_attention_2"
+
+  results_file: "baseline_results"
+  
+data_config:
+  path: "Erland/fineweb-edu-cleaned-simplified-subset"
+
+parallel_config:
+  tp_size: 1
+  pp_size: 1
+  dp_size: 1
+
+model_config:
+  name: "keeeeenw/MicroLlama"

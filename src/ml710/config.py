@@ -32,7 +32,7 @@ class TrainConfig(BaseConfig):
 
     # Checkpoint
     checkpoint_path: str = "checkpoints"
-    save_frequency: int = 1000
+    save_frequency: int = 100000000000
     load_path: str | None = None
 
     # compile

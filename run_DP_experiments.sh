@@ -1,7 +1,7 @@
 #!/bin/bash
 
-bucket_sizes=(1 8 16 32 64)
-parallelism_types=(naive wait_free fsdp bucket)
+bucket_sizes=(1)
+parallelism_types=(bucket)
 
 for type in "${parallelism_types[@]}"; do
     echo "--- Running Parallelism Experiment: DP_${type} ---"
@@ -13,7 +13,7 @@ for type in "${parallelism_types[@]}"; do
             echo "Running with ${config_file}"
             CUDA_DEVICE_MAX_CONNECTIONS=1 torchrun \
                 --nproc_per_node 2 \
-                src/ml710/train.py @ "$config_file" --train_config.lr 0.001
+                src/ml710/train.py @ "$config_file" --train_config.lr 0.001 --parallel_config.zero_stage 2
             echo "Finished running ${config_file}"
         else
             echo "Warning: Config file not found, skipping: ${config_file}"

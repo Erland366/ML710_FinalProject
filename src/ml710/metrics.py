@@ -41,7 +41,7 @@ class GoodputMetrics:
     def metrics(self, current_end_time, new_loss) -> dict:
         throughput = self._throughput(current_end_time) 
         statistical_efficiency = self._statistical_efficiency(new_loss)
-        goodput = self._goodput(current_end_time, new_loss)
+        goodput = throughput * statistical_efficiency
 
         self.avg_throughput.append(throughput)
         self.avg_stat_efficiency.append(statistical_efficiency)

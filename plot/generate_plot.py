@@ -2,22 +2,76 @@ import os
 import wandb
 import matplotlib.pyplot as plt
 import pandas as pd
-import numpy as np # Import numpy for nanoseconds conversion if needed
+import numpy as np
 
-# --- Configuration ---
 ENTITY = "erlandpg"
 PROJECT = "ml710_FINALFINALFINALFINALproject"
 
-# Option 1: Specify runs by Path (Full W&B Path)
-# Ensure RUN_PATHS is populated if using this method
+## RUN_PATHS BASELINE
+# RUN_PATHS = [
+#     "yca6vvk8", # BS=1
+#     "8z33fsap", # BS=8
+#     "kce6sji0", # BS=16
+#     "fmzi0i0x", # BS=32
+#     "4v26jsmi", # BS=64
+# ]
+
+# ## RUN PATHS FSDP ZeRO 3
+# RUN_PATHS = [
+#     "68szq66o", # BS=1
+#     "oc6b464t", # BS=8
+#     "gxf4maaq", # BS=16
+#     "0ge3wnkp", # BS=32
+#     "5wvqko62", # BS=64
+# ]
+
+# ## RUN PATHS WAIT FREE
+# RUN_PATHS = [
+#     "ll9v3d15", # BS=1
+#     "2cltph5u", # BS=8
+#     "uaa4v0j1", # BS=16
+#     "ta505fjg", # BS=32
+#     "oj93ibcj", # BS=64
+# ]
+
+# ## RUN PATHS NAIVE DP
+# RUN_PATHS = [
+#     "99qlt9xi", # BS=1
+#     "ovfz6v9e", # BS=8
+#     "dxnf48z0", # BS=16
+#     "dmc0g8uk", # BS=32
+#     "2xhwi433", # BS=64
+# ]
+
+# ## RUN PATHS BUCKET DP
+# RUN_PATHS = [
+#     "ciqha75n", # BS=1
+#     "t2mylq7z", # BS=8
+#     "zz3h1ekg", # BS=16
+#     "0sou48af", # BS=32
+#     "zykv80fa", # BS=64
+# ]
+
+# ## RUN PATHS FSDP ZeRO 2
+# RUN_PATHS = [
+#     "eqg36ovb", # BS=1
+#     "k2013eea", # BS=8
+#     "wnk4p0fe", # BS=16
+#     "mr4zml70", # BS=32
+#     "8xvlnugs", # BS=64
+# ]
+
+## RUN PATHS COMPARISON BASELINE, NAIVE, WAIT FREE, BUCKET, FSDP ZeRO 2, FSDP ZeRO 3, BS=1
 RUN_PATHS = [
-    "yca6vvk8",
-    "8z33fsap",
-    "kce6sji0",
-    "fmzi0i0x",
-    "4v26jsmi",
+    "yca6vvk8", # BS=1, BASELINE
+    "99qlt9xi", # BS=1, NAIVE
+    "ll9v3d15", # BS=1, WAIT FREE
+    "ciqha75n", # BS=1, BUCKET
+    "eqg36ovb", # BS=1, FSDP ZeRO 2
+    "68szq66o", # BS=1, FSDP ZeRO 3
 ]
-# Automatically prepend entity/project if only run IDs are given
+
+
 if ENTITY and PROJECT and RUN_PATHS and "/" not in RUN_PATHS[0]:
      RUN_PATHS = [f"{ENTITY}/{PROJECT}/{run_id}" for run_id in RUN_PATHS]
 
@@ -28,13 +82,21 @@ RUN_NAMES = [
     # "your-run-name-2",
 ]
 
-# Custom names for the legend (must match the order and length of RUN_PATHS or RUN_NAMES)
+# # Custom names for the legend (must match the order and length of RUN_PATHS or RUN_NAMES)
+# CUSTOM_RUN_NAMES = [
+#     "BS-1",
+#     "BS-8",
+#     "BS-16",
+#     "BS-32",
+#     "BS-64",
+# ]
 CUSTOM_RUN_NAMES = [
-    "BS-1",
-    "BS-8",
-    "BS-16",
-    "BS-32",
-    "BS-64",
+    "BASELINE",
+    "NAIVE",
+    "WAIT FREE",
+    "BUCKET",
+    "FSDP ZeRO 2",
+    "FSDP ZeRO 3",
 ]
 # Set to None if you want to use the default W&B run names
 # CUSTOM_RUN_NAMES = None

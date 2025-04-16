@@ -196,7 +196,18 @@ def main(
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    callback = partial(trace_handler, output_dir=output_dir)
+    is_wandb_rank = pgm.process_group_manager.tp_rank == 0 and pgm.process_group_manager.dp_rank == 0 and pgm.process_group_manager.cp_rank == 0 and pgm.process_group_manager.pp_is_last_stage
+
+    if is_wandb_rank:
+        # Better run name for logging experiments
+        if pgm.process_group_manager.tp_world_size > 1:
+            train_config.run_name += f"-tp_{parallel_config.tp_engine.upper()}"
+        if pgm.process_group_manager.pp_world_size > 1:
+            train_config.run_name += f"-pp_{parallel_config.pp_engine.upper()}"
+        if pgm.process_group_manager.dp_world_size > 1:
+            train_config.run_name += f"-dp_{parallel_config.dp_engine.upper()}"
+
+    callback = partial(trace_handler, output_dir=output_dir, run_name=train_config.run_name)
 
     prof = torch.profiler.profile(
         activities=activities,
@@ -225,7 +236,6 @@ def main(
         split=data_config.split
     )
 
-    is_wandb_rank = pgm.process_group_manager.tp_rank == 0 and pgm.process_group_manager.dp_rank == 0 and pgm.process_group_manager.cp_rank == 0 and pgm.process_group_manager.pp_is_last_stage
 
     if not train_config.pretrain and pgm.process_group_manager.global_rank == 0:
         download_model(model_config.name, os.environ["HF_TOKEN"])
@@ -255,13 +265,8 @@ def main(
     dist.barrier()
 
     if is_wandb_rank:
-        # Better run name for logging experiments
-        if pgm.process_group_manager.tp_world_size > 1:
-            train_config.run_name += f"-tp_{parallel_config.tp_engine.upper()}"
-        if pgm.process_group_manager.pp_world_size > 1:
-            train_config.run_name += f"-pp_{parallel_config.pp_engine.upper()}"
-        if pgm.process_group_manager.dp_world_size > 1:
-            train_config.run_name += f"-dp_{parallel_config.dp_engine.upper()}"
+        if train_config.run_profile:
+            os.environ["WANDB_MODE"] = "offline"
 
         config_dict = {}
         config_dict.update(train_config.dict())

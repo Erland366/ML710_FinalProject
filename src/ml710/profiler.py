@@ -9,6 +9,7 @@ def trace_handler(
     output_dir: str,
     metric: str = "self_cuda_time_total",
     row_limit: int = 25,
+    run_name: str = "default",
 ):
     """
     Handles export of artifacts from ``torch.profiler.profile``.
@@ -39,7 +40,7 @@ def trace_handler(
 
     world_size, rank = int(os.environ.get("WORLD_SIZE", 1)), int(os.environ.get("RANK", 0))
     curr_trace_dir_name = "iteration_" + str(prof.step_num)
-    curr_trace_dir = os.path.join(output_dir, curr_trace_dir_name)
+    curr_trace_dir = os.path.join(output_dir, run_name, curr_trace_dir_name)
     if not os.path.exists(curr_trace_dir):
         os.makedirs(curr_trace_dir, exist_ok=True)
 
@@ -70,25 +71,25 @@ def trace_handler(
         if rank == 0:
             try:
                 prof.export_memory_timeline(
-                    f"{curr_trace_dir}/rank{rank}_memory-timeline.html"
+                    f"{curr_trace_dir}/{run_name}_rank{rank}_memory-timeline.html"
                 )
             except Exception as e:
                 # log.warn(f" Failed to export memory timeline: {e}")
                 print(f"Saving profiling results to {curr_trace_dir}")
 
             torch.cuda.memory._dump_snapshot(
-                f"{curr_trace_dir}/rank{rank}_memory_snapshot.pickle"
+                f"{curr_trace_dir}/{run_name}_rank{rank}_memory_snapshot.pickle"
             )
 
     # Dump stack traces
     if prof.with_stack:
-        prof.export_stacks(f"{curr_trace_dir}/rank{rank}_stacks.txt", metric=metric)
+        prof.export_stacks(f"{curr_trace_dir}/{run_name}_rank{rank}_stacks.txt", metric=metric)
 
     # Export event averages
     key_avgs = prof.key_averages(
         group_by_input_shape=prof.record_shapes, group_by_stack_n=5
     ).table(sort_by=metric, row_limit=row_limit)
-    with open(f"{curr_trace_dir}/rank{rank}_key_averages.txt", "w") as f:
+    with open(f"{curr_trace_dir}/{run_name}_rank{rank}_key_averages.txt", "w") as f:
         print(key_avgs, file=f)
     if rank == 0:
         # log.info(f"Saving profiling results to {curr_trace_dir}")

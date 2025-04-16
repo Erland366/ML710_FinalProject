@@ -178,3 +178,5 @@ hf_model_safetensors/
 checkpoints/
 profile/
 results/*.csv
+plot/*.png
+plots/

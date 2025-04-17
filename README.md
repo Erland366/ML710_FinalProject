@@ -19,6 +19,8 @@ We need to make sure that
     - [x] FSDP
 - [x] Model Parallelism
 - [x] Pipeline Parallelism
+    - [x] 1F1B
+    - [x] AFAB
 <!-- - [ ] Data + Model Parallelism (Need at least 4 GPUs) -->
 
 # How to Install
